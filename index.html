@@ -125,7 +125,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":12853636,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":12820884,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine({...GODOT_CONFIG, onProgress: function (current, total) {
 	const progress = document.getElementById('status-progress');
@@ -222,7 +222,7 @@ const engine = new Engine({...GODOT_CONFIG, onProgress: function (current, total
 		setStatusMode('progress');
 		const pack = GODOT_CONFIG.executable + '.pck';
 		// Keep the runtime filename stable while fetching this exported revision.
-		const revision = 'world-camera-1-' + GODOT_CONFIG.fileSizes[pack];
+		const revision = 'inventory-rain-1-' + GODOT_CONFIG.fileSizes[pack];
 		Promise.all([
 			engine.init(GODOT_CONFIG.executable),
 			engine.preloadFile(pack + '?v=' + revision, pack),
