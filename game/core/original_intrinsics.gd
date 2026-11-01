@@ -7,6 +7,7 @@ var enabled: bool = true
 var fast_render: bool = true
 var hits: Dictionary = {}
 var renderer: WolfRenderIntrinsics
+const WEATHER_METHODS: Array[String]=["f.a(I)V","f.a(I)I","f.a(IIIIIIIIIIIIIZ)V","i.l(Ljavax/microedition/lcdui/Graphics;)V"]
 const METHODS: Array[String] = ["c.a(IIILjavax/microedition/lcdui/Graphics;)V","c.a(II)I","c.b(I)Ljava/lang/Object;","c.a(I)Ljava/lang/String;","i.a(B)I","i.a(BBII)I","i.a(IILjava/util/Random;)I","i.f(I)I","i.a(IIIIIIILjavax/microedition/lcdui/Graphics;)V","i.a(IIIIIIIIIIIIILjavax/microedition/lcdui/Graphics;IZ)V","i.b(BBII)Z","i.a(BBI)Z"]
 const FAST_METHODS: Array[String]=["i.a(IILjava/util/Random;)I","i.f(I)I","i.a(IIIIIIILjavax/microedition/lcdui/Graphics;)V","i.a(IIIIIIIIIIIIILjavax/microedition/lcdui/Graphics;IZ)V","i.b(BBII)Z","i.a(BBI)Z"]
 
@@ -15,12 +16,17 @@ func _init(machine: WolfVM) -> void:
 	renderer=WolfRenderIntrinsics.new(machine,self)
 
 func accepts(owner: String,key: String) -> bool:
+	if owner in ["f","i"] and (owner+"."+key) in WEATHER_METHODS:return enabled and fast_render
 	return enabled and (owner+"."+key) in METHODS and (fast_render or not (owner+"."+key) in FAST_METHODS)
 
-func invoke(owner: String,key: String,args: Array) -> Variant:
+func invoke(owner: String,key: String,args: Array,object: Variant=null) -> Variant:
 	var method: String = owner+"."+key
 	hits[method] = int(hits.get(method,0))+1
 	match method:
+		"f.a(I)V":renderer.particles(object,int(args[0]));return null
+		"f.a(I)I":return renderer.integer_root(int(args[0]))
+		"f.a(IIIIIIIIIIIIIZ)V":renderer.emit_rain(object,args);return null
+		"i.l(Ljavax/microedition/lcdui/Graphics;)V":renderer.rain(args[0]);return null
 		"i.a(IILjava/util/Random;)I":return renderer.random_range(int(args[0]),int(args[1]),args[2])
 		"i.f(I)I":return clampi(int(args[0]),0,255)
 		"i.a(IIIIIIILjavax/microedition/lcdui/Graphics;)V":renderer.ground(args);return null

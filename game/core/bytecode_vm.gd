@@ -396,7 +396,7 @@ func step(fiber: Dictionary) -> void:
 				var owner: String = obj.type if op in [182,185] and obj is WMObject else ref.owner
 				var found: Dictionary = find_method(owner, ref.name + ref.desc)
 				if not found.method.is_empty() and intrinsics.accepts(found.owner,ref.name+ref.desc):
-					var result: Variant = intrinsics.invoke(found.owner,ref.name+ref.desc,args)
+					var result: Variant = intrinsics.invoke(found.owner,ref.name+ref.desc,args,obj)
 					if ref["return"] != "V": stack.append(result)
 				elif not found.method.is_empty(): push_frame(fiber,found.owner,found.method,obj,args)
 				else:

@@ -13,15 +13,32 @@ var modal_scroll: ScrollContainer
 var modal_actions: HBoxContainer
 var modal_layout: VBoxContainer
 var hud: PanelContainer
-var inventory_row: HBoxContainer
-var inventory_scroll: ScrollContainer
+var active_pack: Control
+var active_item: Button
+var item_previous: Button
+var item_next: Button
+var active_name: Label
+var active_count: Label
+var inventory_button: Button
+var inventory_open: bool=false
+var inventory_items: Array=[]
+var selected_slot: int=-1
+var selected_rest_slot: int=-1
+var bag_shade: ColorRect
+var bag_panel: PanelContainer
+var bag_title: Label
+var bag_hint: Label
+var bag_close: Button
+var bag_scroll: ScrollContainer
+var bag_grid: GridContainer
+var bag_key: String=""
+var bag_columns: int=3
 var stamina: ProgressBar
 var stamina_label: Label
 var clock_label: Label
 var title: Label
 var previous_modal: String=""
 var previous_inventory: String=""
-var previous_selected: int=-999
 var message: Label
 var map_view: TextureRect
 var map_texture: ImageTexture
@@ -117,6 +134,7 @@ func _ready() -> void:
 	var spacer: Control=Control.new();spacer.size_flags_horizontal=Control.SIZE_EXPAND_FILL;top_row.add_child(spacer)
 	game_buttons.append(icon_button(top_row,"map",func() -> void:keypad_input.emit(51)))
 	game_buttons.append(icon_button(top_row,"journal",func() -> void:keypad_input.emit(49)))
+	inventory_button=icon_button(top_row,"inventory",show_inventory)
 	var menu: Button=icon_button(top_row,"menu",show_quick_menu)
 	game_buttons.append(menu)
 	game_buttons.append(icon_button(top_row,"save",func() -> void:save_requested.emit()))
@@ -135,13 +153,15 @@ func _ready() -> void:
 	var track: StyleBoxFlat=StyleBoxFlat.new();track.bg_color=Color("14251f");stamina.add_theme_stylebox_override("background",track)
 	var fill: StyleBoxFlat=StyleBoxFlat.new();fill.bg_color=Color("a9b77e");stamina.add_theme_stylebox_override("fill",fill)
 	inventory_caption=text_label(hud_body,"",11);inventory_caption.add_theme_color_override("font_color",Color("a4a47e"))
-	inventory_scroll=ScrollContainer.new();inventory_scroll.vertical_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
-	inventory_scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_AUTO;inventory_scroll.scroll_deadzone=12;hud_body.add_child(inventory_scroll)
-	var scrollbar: HScrollBar=inventory_scroll.get_h_scroll_bar()
-	for variant: String in ["scroll","grabber","grabber_highlight","grabber_pressed"]:
-		var strip: StyleBoxFlat=StyleBoxFlat.new();strip.bg_color=Color("23352a") if variant=="scroll" else Color("8f9f6c")
-		strip.content_margin_top=3;strip.content_margin_bottom=3;scrollbar.add_theme_stylebox_override(variant,strip)
-	inventory_row=HBoxContainer.new();inventory_row.mouse_filter=Control.MOUSE_FILTER_PASS;inventory_row.add_theme_constant_override("separation",5);inventory_scroll.add_child(inventory_row)
+	active_pack=Control.new();hud_body.add_child(active_pack)
+	active_item=icon_button(active_pack,"inventory",show_inventory);style_button(active_item,5)
+	item_previous=icon_button(active_pack,"left",func() -> void:cycle_item(-1))
+	item_next=icon_button(active_pack,"right",func() -> void:cycle_item(1))
+	item_previous.action_mode=BaseButton.ACTION_MODE_BUTTON_PRESS;item_next.action_mode=BaseButton.ACTION_MODE_BUTTON_PRESS
+	active_name=text_label(active_pack,"",12);active_name.autowrap_mode=TextServer.AUTOWRAP_OFF;active_name.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS;active_name.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;active_name.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	active_count=text_label(active_item,"",15);active_count.mouse_filter=Control.MOUSE_FILTER_IGNORE;active_count.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	active_count.offset_left=-34;active_count.offset_top=-25;active_count.offset_right=-7;active_count.offset_bottom=-5;active_count.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
+	active_count.add_theme_color_override("font_outline_color",Color.BLACK);active_count.add_theme_constant_override("outline_size",4)
 	rest_button=icon_button(hud_body,"sleep",func() -> void:rest_requested.emit());rest_button.add_theme_font_size_override("font_size",12)
 	rest_button.vertical_icon_alignment=VERTICAL_ALIGNMENT_TOP
 	nav_pad=GridContainer.new();nav_pad.columns=3;nav_pad.add_theme_constant_override("h_separation",4);nav_pad.add_theme_constant_override("v_separation",4);hud_body.add_child(nav_pad)
@@ -171,10 +191,12 @@ func _ready() -> void:
 	footer=text_label(self,"",14);footer.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;footer.add_theme_color_override("font_color",Color("99a68c"));footer.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	quick_menu=PopupPanel.new();quick_menu.add_theme_stylebox_override("panel",frame("panel",14));add_child(quick_menu)
 	quick_column=VBoxContainer.new();quick_column.add_theme_constant_override("separation",8);quick_menu.add_child(quick_column)
+	build_inventory_panel()
 	resized.connect(layout);set_render_mode(true);call_deferred("layout")
 
 func set_render_mode(active: bool) -> void:
 	remastered_mode=active
+	if not active and inventory_open:close_inventory()
 	if original_button==null:return
 	var caption: String="Remastered" if active else "Classic"
 	if original_button.text!=caption:
@@ -193,6 +215,109 @@ func show_quick_menu() -> void:
 	quick_menu.content_scale_mode=Window.CONTENT_SCALE_MODE_CANVAS_ITEMS;quick_menu.content_scale_size=Vector2i(260,200)
 	quick_menu.popup_centered(Vector2i(Vector2(260,200)*scale))
 
+func build_inventory_panel() -> void:
+	bag_shade=ColorRect.new();bag_shade.z_index=30;bag_shade.color=Color(0.01,0.025,0.02,0.7)
+	bag_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT);bag_shade.hide();add_child(bag_shade)
+	bag_shade.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT:close_inventory();bag_shade.accept_event())
+	bag_panel=PanelContainer.new();bag_panel.z_index=31;bag_panel.add_theme_stylebox_override("panel",frame("panel",16));bag_panel.hide();add_child(bag_panel)
+	var column: VBoxContainer=VBoxContainer.new();column.add_theme_constant_override("separation",10);bag_panel.add_child(column)
+	var header: HBoxContainer=HBoxContainer.new();header.add_theme_constant_override("separation",8);column.add_child(header)
+	bag_title=text_label(header,"",22);bag_title.size_flags_horizontal=Control.SIZE_EXPAND_FILL;bag_title.autowrap_mode=TextServer.AUTOWRAP_OFF
+	bag_close=add_button(header,"×",close_inventory);bag_close.custom_minimum_size=Vector2(44,44)
+	bag_hint=text_label(column,"",14)
+	bag_scroll=ScrollContainer.new();bag_scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED;bag_scroll.size_flags_vertical=Control.SIZE_EXPAND_FILL;column.add_child(bag_scroll)
+	bag_grid=GridContainer.new();bag_grid.columns=3;bag_grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+	bag_grid.add_theme_constant_override("h_separation",8);bag_grid.add_theme_constant_override("v_separation",8);bag_scroll.add_child(bag_grid)
+
+func show_inventory() -> void:
+	if not world_ready or screen!="i" or not remastered_mode:return
+	if inventory_open:close_inventory();return
+	inventory_open=true;quick_menu.hide();bag_shade.show();bag_panel.show()
+	bag_scroll.scroll_vertical=0;refresh_inventory_grid();layout()
+	call_deferred("layout_inventory")
+
+func close_inventory() -> void:
+	inventory_open=false
+	if bag_panel!=null:bag_panel.hide();bag_shade.hide()
+
+func _input(event: InputEvent) -> void:
+	if not remastered_mode or not is_visible_in_tree():return
+	if event is InputEventKey and event.pressed:
+		var key: int=event.physical_keycode
+		if inventory_open:
+			if key==KEY_F2:return
+			if key in [KEY_I,KEY_ESCAPE,KEY_TAB] and not event.echo:close_inventory()
+			get_viewport().set_input_as_handled()
+		elif key==KEY_I and not event.echo and screen=="i":
+			show_inventory();get_viewport().set_input_as_handled()
+	elif inventory_open and (event is InputEventJoypadButton or event is InputEventJoypadMotion):
+		get_viewport().set_input_as_handled()
+
+func cycle_item(direction: int) -> void:
+	if inventory_items.is_empty():return
+	var index: int=-1
+	for n: int in inventory_items.size():
+		if int(inventory_items[n].slot)==selected_slot:index=n;break
+	index=posmod(index+direction,inventory_items.size()) if index>=0 else (0 if direction>0 else inventory_items.size()-1)
+	inventory_selected.emit(int(inventory_items[index].id))
+
+func refresh_active_item() -> void:
+	active_item.icon=load("res://assets/ui/sleep.svg" if selected_slot==selected_rest_slot else "res://assets/ui/inventory.svg")
+	active_name.text=t("Отдых","Rest") if selected_slot==selected_rest_slot else t("Выбери предмет","Choose an item")
+	active_count.text=""
+	for item: Dictionary in inventory_items:
+		if int(item.slot)!=selected_slot:continue
+		active_item.icon=load("res://assets/sprites/%03d.png"%int(item.sprite))
+		active_name.text=str(item.name);active_count.text=str(item.count) if int(item.count)>1 else ""
+		break
+	var can_cycle: bool=inventory_items.size()>1 or (inventory_items.size()==1 and int(inventory_items[0].slot)!=selected_slot)
+	item_previous.disabled=not can_cycle;item_next.disabled=not can_cycle
+	active_name.tooltip_text=active_name.text
+
+func refresh_inventory_grid() -> void:
+	bag_title.text=t("Инвентарь","Inventory")+" · "+str(inventory_items.size())
+	bag_hint.text=t("Нажми на предмет, чтобы сделать его активным.","Tap an item to make it active.")
+	bag_close.tooltip_text=t("Закрыть · Esc","Close · Esc")
+	var key: String=JSON.stringify([inventory_items,selected_slot,language])
+	if key==bag_key:return
+	bag_key=key
+	for child: Node in bag_grid.get_children():bag_grid.remove_child(child);child.queue_free()
+	if inventory_items.is_empty():text_label(bag_grid,t("Пока пусто","Your bag is empty"),18)
+	for item: Dictionary in inventory_items:
+		var id: int=int(item.id)
+		var b: Button=add_button(bag_grid,"",func() -> void:inventory_selected.emit(id);close_inventory())
+		b.set_meta("inventory_card",true);b.size_flags_horizontal=Control.SIZE_EXPAND_FILL;b.tooltip_text=str(item.name)
+		if int(item.slot)==selected_slot:b.add_theme_stylebox_override("normal",frame("button_selected",10))
+		var content: VBoxContainer=VBoxContainer.new();content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		content.offset_left=8;content.offset_top=8;content.offset_right=-8;content.offset_bottom=-8;content.mouse_filter=Control.MOUSE_FILTER_IGNORE;b.add_child(content)
+		var icon: TextureRect=TextureRect.new();icon.texture=load("res://assets/sprites/%03d.png"%int(item.sprite))
+		icon.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;icon.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size_flags_vertical=Control.SIZE_EXPAND_FILL;icon.custom_minimum_size.y=46;icon.mouse_filter=Control.MOUSE_FILTER_IGNORE;content.add_child(icon)
+		var name: Label=text_label(content,str(item.name),13);name.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+		name.max_lines_visible=2;name.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS;name.custom_minimum_size.y=34;name.mouse_filter=Control.MOUSE_FILTER_IGNORE
+		if int(item.count)>1:
+			var count: Label=text_label(b,str(item.count),15);count.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+			count.offset_left=-40;count.offset_top=8;count.offset_right=-10;count.offset_bottom=30
+			count.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT;count.mouse_filter=Control.MOUSE_FILTER_IGNORE
+			count.add_theme_color_override("font_outline_color",Color.BLACK);count.add_theme_constant_override("outline_size",4)
+
+func layout_inventory() -> void:
+	if bag_panel==null or not inventory_open:return
+	var available_width: float=size.x-safe_insets.x-safe_insets.z
+	var width: float=minf(800,available_width-24)
+	bag_columns=2 if width<324 else (3 if width<560 else 5)
+	bag_grid.columns=bag_columns
+	var tile_height: float=104 if compact else 124
+	var tile_width: float=floorf((width-48-(bag_columns-1)*8)/bag_columns)
+	for child: Node in bag_grid.get_children():
+		if child is Button:child.custom_minimum_size=Vector2(tile_width,tile_height)
+	bag_title.add_theme_font_size_override("font_size",18 if compact else 24)
+	var rows: int=maxi(1,ceili(float(inventory_items.size())/bag_columns))
+	var available_height: float=maxf(96,size.y-top_reserve-safe_insets.w-24)
+	var height: float=minf(available_height,154+rows*(tile_height+8))
+	place(bag_panel,safe_insets.x+(available_width-width)/2,top_reserve+12+(available_height-height)/2,width,height)
+
 func layout() -> void:
 	if modal==null:return
 	portrait=size.x<size.y;compact=portrait or size.x<950 or size.y<580
@@ -201,16 +326,29 @@ func layout() -> void:
 	top_row.add_theme_constant_override("separation",4 if compact else 6)
 	top_reserve=safe_insets.y+(64 if compact else 78)
 	place(top,left+margin,safe_insets.y+6,width-margin*2,54 if compact else 62)
-	title.visible=not main_menu and ((portrait and width>=370) or (not portrait and width>=700))
 	title.text="WM" if portrait else "W O L F   M O O N"
 	title.add_theme_font_size_override("font_size",17 if compact else 21)
-	if compact and not portrait and width<700:place(top,size.x-right-308,safe_insets.y+6,300,54)
 	var framed: bool=not main_menu and world_ready
 	if framed!=top_framed:
 		top_framed=framed;top.add_theme_stylebox_override("panel",frame("panel",7) if framed else StyleBoxEmpty.new())
 	for index: int in game_buttons.size():game_buttons[index].visible=index==2 or (world_ready and not main_menu and (not compact or index<3))
-	original_button.custom_minimum_size=Vector2(132,44)
-	hud_reserve=(218 if portrait else (116 if compact else 126))+bottom
+	inventory_button.visible=world_ready and not main_menu
+	var narrow_top: bool=width<360
+	if compact:
+		for button: Button in game_buttons:button.custom_minimum_size=Vector2(40 if narrow_top else 44,44)
+		inventory_button.custom_minimum_size=Vector2(40 if narrow_top else 44,44)
+		original_button.add_theme_font_size_override("font_size",11 if narrow_top else 12)
+		original_button.add_theme_constant_override("icon_max_width",16 if narrow_top else 18)
+	else:
+		for button: Button in game_buttons:button.custom_minimum_size=Vector2(46,46)
+		inventory_button.custom_minimum_size=Vector2(46,46)
+		original_button.add_theme_font_size_override("font_size",14);original_button.add_theme_constant_override("icon_max_width",22)
+	original_button.custom_minimum_size=Vector2((102 if narrow_top else 112) if compact else 132,44)
+	title.visible=not main_menu and ((portrait and width>=390) or (not portrait and width>=760))
+	if compact and not portrait and width<700:
+		var toolbar_width: float=minf(width-margin*2,342)
+		place(top,size.x-right-margin-toolbar_width,safe_insets.y+6,toolbar_width,54)
+	hud_reserve=(226 if portrait else (116 if compact else 126))+bottom
 	place(hud,left,size.y-hud_reserve,width,hud_reserve)
 	var w: float=width;var padding: float=12
 	var stats_width: float=w-24 if portrait else (w-306 if compact else 174)
@@ -222,22 +360,29 @@ func layout() -> void:
 		stamina_label.horizontal_alignment=HORIZONTAL_ALIGNMENT_LEFT
 	if compact:stamina_label.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
 	if portrait:
-		place(inventory_scroll,12,48,w-88,64);place(rest_button,w-68,46,56,62)
-		place(nav_pad,12,116,146,96);place(action_button,w-108,124,96,80)
-		place(touch_hint,164,116,w-278,96)
+		place(active_pack,12,44,w-88,76);place(rest_button,w-68,48,56,62)
+		place(nav_pad,12,124,146,96);place(action_button,w-108,132,96,80)
+		place(touch_hint,164,124,w-278,96)
 	elif compact:
 		var inv_width: float=w-378
-		place(inventory_scroll,12,46,inv_width,64);place(rest_button,24+inv_width,44,56,62)
+		place(active_pack,12,44,inv_width,68);place(rest_button,24+inv_width,44,56,62)
 		place(nav_inline,w-290,49,196,48);place(action_button,w-86,25,74,78)
 	else:
 		var right_pack: float=w-390
-		place(inventory_scroll,204,36,right_pack-220,80);place(rest_button,right_pack,32,64,78)
+		var active_width: float=minf(280,right_pack-220)
+		place(active_pack,204+(right_pack-220-active_width)/2,32,active_width,84);place(rest_button,right_pack,32,64,78)
 		place(nav_inline,right_pack+76,48,196,52);place(action_button,w-98,25,82,86)
 	nav_pad.visible=portrait;nav_inline.visible=not portrait;touch_hint.visible=portrait and w>=370
-	inventory_caption.visible=not compact;place(inventory_caption,204,12,maxf(0,w-620),20)
-	var slot: Vector2=Vector2(62,58) if compact else Vector2(76,72)
-	for node: Node in inventory_row.get_children():
-		if node is Button:node.custom_minimum_size=slot;node.add_theme_constant_override("icon_max_width",44 if compact else 54)
+	inventory_caption.visible=not compact;inventory_caption.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;place(inventory_caption,active_pack.position.x,10,active_pack.size.x,20)
+	var icon_width: float=64 if compact else 80
+	var icon_height: float=54 if portrait else (48 if compact else 64)
+	var center: float=active_pack.size.x/2
+	active_item.custom_minimum_size=Vector2(icon_width,icon_height)
+	item_previous.custom_minimum_size=Vector2(40,44);item_next.custom_minimum_size=Vector2(40,44)
+	place(active_item,center-icon_width/2,0,icon_width,icon_height)
+	place(item_previous,center-icon_width/2-46,4,40,44);place(item_next,center+icon_width/2+6,4,40,44)
+	place(active_name,0,icon_height+2,active_pack.size.x,18)
+	active_item.add_theme_constant_override("icon_max_width",44 if compact else 58)
 	var map_size: float=68 if compact else 88
 	place(map_frame,size.x-right-map_size-margin,top_reserve+6,map_size,map_size)
 	place(message,left+margin,top_reserve+6,maxf(0,width-map_size-30),32)
@@ -253,12 +398,14 @@ func layout() -> void:
 	place(modal,(size.x-modal_width)/2,top_reserve+maxf(10,(available_height-modal_height)/2),modal_width,modal_height)
 	if main_menu and not compact:modal.position.x=size.x*0.54
 	place(footer,left+16,size.y-bottom-32,width-32,24);footer.visible=main_menu and not compact
+	layout_inventory()
 
 func update_state(state: Dictionary) -> void:
 	var next_language: String=state.get("locale","ru")
 	var needs_layout: bool=next_language!=language or screen!=state.screen or world_ready!=state.get("world_ready",false) or full_map!=state.get("full_map",false)
 	if next_language!=language:language=next_language;previous_modal="";previous_inventory=""
 	screen=state.screen;world_ready=state.get("world_ready",false);full_map=state.get("full_map",false)
+	if inventory_open and (screen!="i" or not world_ready):close_inventory()
 	main_menu=screen=="j" and int(state.get("menu_id",-1))==0
 	hud.visible=world_ready and screen=="i" and not full_map
 	map_frame.visible=hud.visible;backdrop.visible=not world_ready or main_menu
@@ -267,18 +414,22 @@ func update_state(state: Dictionary) -> void:
 	var tips: Array[String]=[t("Закрыть карту · M","Close map · M") if full_map else t("Карта · M","Map · M"),t("Журнал · J","Journal · J"),t("Меню, сохранение и загрузка","Menu, save and load"),t("Сохранить · F5","Save · F5"),t("Загрузить · F9","Load · F9")]
 	for n: int in game_buttons.size():
 		game_buttons[n].tooltip_text=tips[n];game_buttons[n].disabled=screen!="i" and n!=2
+	inventory_button.tooltip_text=t("Инвентарь · I","Inventory · I");inventory_button.disabled=screen!="i"
+	item_previous.tooltip_text=t("Предыдущий предмет","Previous item");item_next.tooltip_text=t("Следующий предмет","Next item")
+	active_item.tooltip_text=t("Активный предмет. Открыть инвентарь · I","Active item. Open inventory · I")
 	for b: Button in movement_buttons:
 		b.tooltip_text={-1:t("Вперёд","Move forward"),-2:t("Развернуться","Turn around"),-3:t("Поворот влево","Turn left"),-4:t("Поворот вправо","Turn right")}[int(b.get_meta("raw"))]
 	action_button.text=t("Действие","Action");action_button.tooltip_text=t("Использовать предмет · Enter","Use selected item · Enter")
 	rest_button.text=t("Спать","Rest");rest_button.disabled=screen!="i" or not state.get("rest_available",false)
 	rest_button.tooltip_text=t("Отдохнуть и сохранить игру · R","Rest and save the game · R") if not rest_button.disabled else t("Сейчас здесь нельзя спать","You cannot rest here right now")
 	touch_hint.text=t("Выбери предмет\nи нажми действие","Choose an item\nand tap Action")
-	inventory_caption.text=t("П Р Е Д М Е Т Ы","I N V E N T O R Y")
-	footer.text=t("WASD — движение    Enter — действие    M — карта    J — журнал","WASD — move    Enter — act    M — map    J — journal")
+	inventory_caption.text=t("А К Т И В Н Ы Й   П Р Е Д М Е Т","A C T I V E   I T E M")
+	footer.text=t("WASD — движение    Enter — действие    M — карта    J — журнал    I — инвентарь","WASD — move    Enter — act    M — map    J — journal    I — inventory")
 	if state.has("map_image"):
 		if map_texture==null:map_texture=ImageTexture.create_from_image(state.map_image);map_view.texture=map_texture
 		else:map_texture.update(state.map_image)
 	if world_ready:
+		inventory_items=state.inventory;selected_slot=int(state.selected);selected_rest_slot=int(state.get("rest_slot",-1))
 		rest_button.add_theme_stylebox_override("normal",frame("button_selected" if int(state.selected)==int(state.get("rest_slot",-1)) else "button",8))
 		clock_label.text="%s %d · %02d:00"%[t("День","Day"),int(state.day)+1,int(state.hour)]
 		stamina.value=state.stamina;stamina_label.text=t("Силы ","Stamina ")+"%d / 100"%int(state.stamina)
@@ -286,19 +437,8 @@ func update_state(state: Dictionary) -> void:
 		if inventory_key!=previous_inventory:
 			needs_layout=true
 			previous_inventory=inventory_key
-			for child: Node in inventory_row.get_children():inventory_row.remove_child(child);child.queue_free()
-			for item: Dictionary in state.inventory:
-				var b: Button=add_button(inventory_row,"",func() -> void:inventory_selected.emit(int(item.id)))
-				b.mouse_filter=Control.MOUSE_FILTER_PASS
-				b.icon=load("res://assets/sprites/%03d.png"%int(item.sprite));b.expand_icon=true;b.icon_alignment=HORIZONTAL_ALIGNMENT_CENTER
-				style_button(b,6);b.tooltip_text=item.name
-				if int(item.slot)==int(state.selected):b.add_theme_stylebox_override("normal",frame("button_selected",6))
-				if int(item.slot)==int(state.selected) and int(state.selected)!=previous_selected:inventory_scroll.call_deferred("ensure_control_visible",b)
-				if int(item.count)>1:
-					var count: Label=text_label(b,str(item.count),14);count.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-					count.offset_left=-26;count.offset_top=-23;count.offset_right=-6;count.offset_bottom=-4;count.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT;count.mouse_filter=Control.MOUSE_FILTER_IGNORE
-					count.add_theme_color_override("font_outline_color",Color.BLACK);count.add_theme_constant_override("outline_size",4)
-			previous_selected=int(state.selected)
+			refresh_active_item()
+			if inventory_open:refresh_inventory_grid()
 	var key: String=JSON.stringify([screen,state.get("title"),state.get("menu"),state.get("selection"),state.dialogue,state.story_sprite,state.softkeys,compact])
 	if key!=previous_modal:
 		needs_layout=true

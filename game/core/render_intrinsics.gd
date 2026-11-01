@@ -9,6 +9,100 @@ func random_range(lo: int,hi: int,random: WMObject) -> int:
 	var span: int=WolfVM.i32(hi-lo+1)
 	if span==0:hi=WolfVM.i32(hi+1);span=WolfVM.i32(hi-lo+1)
 	return WolfVM.i32((vm.native.random_next(random,32)>>1)%span+lo)
+
+func integer_root(value: int) -> int:
+	# f.a(I)I: preserve its 16-step signed integer algorithm exactly.
+	var result: int=0;var bit: int=32768;var shift: int=15
+	while bit!=0:
+		var trial: int=WolfVM.i32(WolfVM.i32((result<<1)+bit)<<shift)
+		shift-=1
+		if value>=trial:result=WolfVM.i32(result+bit);value=WolfVM.i32(value-trial)
+		bit>>=1
+	return result
+
+func particles(object: WMObject,delta: int) -> void:
+	# f.a(I)V. Keep fixed-point overflow, swap removal and splash callbacks.
+	var age: Array=vm.get_field(object,"f","a","[I").data
+	var xs: Array=vm.get_field(object,"f","b","[I").data
+	var ys: Array=vm.get_field(object,"f","c","[I").data
+	var dx: Array=vm.get_field(object,"f","d","[I").data
+	var dy: Array=vm.get_field(object,"f","e","[I").data
+	var count: int=int(vm.get_field(object,"f","f","I"))
+	var splash: bool=int(vm.get_field(object,"f","a","Z"))!=0
+	var drag: int=int(vm.get_field(object,"f","e","I"))
+	var ax: int=int(vm.get_field(object,"f","a","I"));var ay: int=int(vm.get_field(object,"f","b","I"))
+	var wind_x: int=int(vm.get_field(object,"f","c","I"));var wind_y: int=int(vm.get_field(object,"f","d","I"))
+	var index: int=0
+	while index<=count:
+		var remaining: int=WolfVM.i32(int(age[index])-delta)
+		if remaining<1:
+			if splash:synchronous("a(IIII)V",[xs[index],ys[index],int(dy[index])>>15,index])
+			if index!=count:
+				age[index]=age[count];xs[index]=xs[count];ys[index]=ys[count];dx[index]=dx[count];dy[index]=dy[count]
+			count-=1;vm.set_field(object,"f","f","I",count)
+			continue
+		age[index]=remaining
+		if drag!=0:
+			dx[index]=WolfVM.i32(int(dx[index])-(WolfVM.i32(WolfVM.i32(int(dx[index])*drag)*delta)>>14))
+			dy[index]=WolfVM.i32(int(dy[index])-(WolfVM.i32(WolfVM.i32(int(dy[index])*drag)*delta)>>14))
+		dx[index]=WolfVM.i32(int(dx[index])+WolfVM.i32(ax*delta))
+		dy[index]=WolfVM.i32(int(dy[index])+WolfVM.i32(ay*delta))
+		xs[index]=WolfVM.i32(int(xs[index])+(WolfVM.i32(WolfVM.i32(int(dx[index])+wind_x)*delta)>>4))
+		ys[index]=WolfVM.i32(int(ys[index])+(WolfVM.i32(WolfVM.i32(int(dy[index])+wind_y)*delta)>>4))
+		index+=1
+
+func emit_rain(object: WMObject,args: Array) -> void:
+	# f.a(13 ints, boolean)V, including the original four RNG draws per drop.
+	var count: int=int(vm.get_field(object,"f","f","I"));var capacity: int=int(vm.get_field(object,"f","g","I"))
+	var amount: int=int(args[0])
+	if 1+amount+count>capacity:amount=capacity-count-1
+	var age: Array=vm.get_field(object,"f","a","[I").data
+	var xs: Array=vm.get_field(object,"f","b","[I").data;var ys: Array=vm.get_field(object,"f","c","[I").data
+	var dx: Array=vm.get_field(object,"f","d","[I").data;var dy: Array=vm.get_field(object,"f","e","[I").data
+	var random: WMObject=vm.get_static("i","a","Ljava/util/Random;")
+	var sine: Array=vm.get_static("f","a","[S").data
+	var span_x: int=int(args[3])-int(args[1])+1;var span_y: int=int(args[4])-int(args[2])+1
+	for index: int in amount:
+		var x: int=WolfVM.i32(int(args[1])+absi(WolfVM.i32(vm.native.random_next(random,32))%span_x))
+		var y: int=WolfVM.i32(int(args[2])+absi(WolfVM.i32(vm.native.random_next(random,32))%span_y))
+		var speed: int=WolfVM.i32(random_range(int(args[9]),int(args[10]),random)*int(sine[90]))
+		var distance: int=int(args[8]);var magnitude: int=integer_root(WolfVM.i32(distance*distance))
+		count+=1
+		age[count]=random_range(int(args[11]),int(args[12]),random) if int(args[12])!=0 else int(args[11])
+		xs[count]=WolfVM.i32(x*16384);ys[count]=WolfVM.i32(y*16384)
+		dx[count]=0;dy[count]=WolfVM.i32(WolfVM.i32(speed*distance)/magnitude)
+		vm.set_field(object,"f","f","I",count)
+
+func rain(graphics: WMObject) -> void:
+	# i.l(Graphics)V: same raster, without interpreting each drop's bytecode.
+	if int(vm.get_static("i","A","B"))==0 or int(vm.get_static("i","c","Z"))!=0 or int(vm.get_static("i","h","Z"))!=0 or int(vm.get_static("i","e","Z"))!=0:return
+	var x: int=int(vm.get_static("i","d","B"));var y: int=int(vm.get_static("i","e","B"))
+	if tile(x,y,13,57344) in [2,4]:return
+	var g: MidpGraphics=graphics.data;var previous: String=g.phase;g.phase="weather";g.set_clip(0,0,240,281)
+	var hour: int=int(vm.get_static("i","i","B"));var night: bool=hour>=19 or hour<=4
+	var near: WMObject=vm.get_static("i","a","Lf;");var far: WMObject=vm.get_static("i","b","Lf;")
+	if tile(x,y,0,7) in [0,3,7]:
+		g.set_color(0x111122 if night else 0x777788)
+		var fx: Array=vm.get_field(far,"f","b","[I").data;var fy: Array=vm.get_field(far,"f","c","[I").data
+		for index: int in int(vm.get_field(far,"f","f","I"))+1:
+			var px: int=int(fx[index])>>14;var py: int=int(fy[index])>>14;g.line(px,py-1,px,py)
+	var nx: Array=vm.get_field(near,"f","b","[I").data;var ny: Array=vm.get_field(near,"f","c","[I").data;var lengths: Array=vm.get_field(near,"f","e","[I").data
+	var wind: int=int(vm.get_field(near,"f","c","I"))>>14
+	var count: int=int(vm.get_field(near,"f","f","I"))+1
+	for index: int in count:
+		var px: int=int(nx[index])>>14;var py: int=int(ny[index])>>14;var length: int=int(lengths[index])>>14
+		g.set_color((0x111122 if night else 0x777788) if length<3 else (0x222233 if night else 0x888899))
+		g.line(px,py,px+wind,py+length)
+	var sx: Array=vm.get_static("i","p","[I").data;var sy: Array=vm.get_static("i","q","[I").data
+	var radii: Array=vm.get_static("i","r","[I").data;var stages: Array=vm.get_static("i","G","[B").data
+	var color: int=-1
+	for index: int in count:
+		if int(sx[index])==0 or int(sy[index])==0 or int(stages[index])>=6:continue
+		if color<0:color=int(synchronous("a(IZZ)I",[7,1,0]))
+		g.set_color(color)
+		var radius: int=int(radii[index]);var stage: int=int(stages[index])
+		g.arc([int(sx[index])-radius-stage,int(sy[index])-radius-(stage>>1),stage*2+radius,stage+radius,0,360],false)
+	g.set_clip(0,0,240,320);g.phase=previous
 func sprite(x: int,y: int,id: int,graphics: WMObject) -> void:
 	sprites.invoke("c","a(IIILjavax/microedition/lcdui/Graphics;)V",[x,y,id,graphics])
 func tile(x: int,y: int,shift: int,mask: int) -> int:

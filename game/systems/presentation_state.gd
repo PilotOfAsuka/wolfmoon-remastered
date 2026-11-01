@@ -2,6 +2,8 @@ class_name WolfPresentationState
 extends RefCounted
 ## Read-only projection of original fields. No gameplay decisions or extra alerts.
 var vm: WolfVM
+const ITEM_NAMES_RU: Array[String]=["Патроны к револьверу","Бензопила","Ружьё","Аптечка","Ключи от джипа","Самогон","Пиво","Динамит","Нож","Шоколад","Лопата","Череп оборотня","Дрова","Бензин","Сырое мясо","Бинокль","Фонарик","Наручники","Ружейные патроны","Серебряные пули","Серебро","Череп охотника","Револьвер","Ключ от хижины","Тотем Вендиго","Когти"]
+const ITEM_NAMES_EN: Array[String]=["Revolver ammo","Chainsaw","Rifle","First aid kit","Jeep keys","Moonshine","Beer","Dynamite","Knife","Chocolate","Shovel","Werewolf skull","Firewood","Gasoline","Raw meat","Binoculars","Flashlight","Handcuffs","Rifle ammo","Silver bullets","Silver","Hunter skull","Revolver","Cabin key","Wendigo totem","Claws"]
 
 func _init(machine: WolfVM) -> void: vm=machine
 
@@ -82,17 +84,15 @@ func collect() -> Dictionary:
 	state.object_icons=array("h","d","[S")
 	state.creature_icons=array("h","e","[S")
 	state.item_icons=array("h","b","[S")
-	var texts: Array=[]
-	var cache: Array=array("c","b","[Ljava/lang/Object;")
-	if not cache.is_empty() and cache[0]!=null: texts=cache[0].data
-	var descriptions: Array=array("h","c","[S")
 	var items: Array=array("i","A","[B")
 	state.selected=int(vm.get_static("i","o","B"))
 	for n: int in range(0,items.size(),2):
 		var id: int=int(items[n])
 		if id<0 or id>=state.item_icons.size(): continue
-		var name: String=""
-		if id<descriptions.size() and not texts.is_empty(): name=str(texts[int(descriptions[id])])
+		# h.c contains descriptions of ground discoveries, including repeated
+		# quest text. Inventory entries need their own short localized names.
+		var names: Array[String]=ITEM_NAMES_RU if state.locale=="ru" else ITEM_NAMES_EN
+		var name: String=names[id] if id<names.size() else ("Предмет" if state.locale=="ru" else "Item")
 		state.inventory.append({"slot":n/2,"id":id,"count":items[n+1],"name":name,"sprite":state.item_icons[id]})
 	var types: Array=array("i","h","[B");var xs: Array=array("i","i","[B");var ys: Array=array("i","j","[B");var active: Array=array("i","a","[Z")
 	for n: int in types.size(): state.creatures.append({"type":types[n],"x":xs[n],"y":ys[n],"active":int(active[n])!=0})

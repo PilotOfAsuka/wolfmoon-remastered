@@ -251,10 +251,11 @@ func apply_blend(value: float) -> void:
 
 func _process(delta: float) -> void:
 	if game==null: return
-	time_accumulator += delta*1000.0
-	var elapsed: int = mini(500,int(time_accumulator))
-	time_accumulator -= elapsed
-	game.tick(elapsed)
+	if not (remastered and modern_ui!=null and modern_ui.inventory_open):
+		time_accumulator += delta*1000.0
+		var elapsed: int = mini(500,int(time_accumulator))
+		time_accumulator -= elapsed
+		game.tick(elapsed)
 	if game.platform.exit_requested: get_tree().quit(); return
 	if transcript!=null: transcript.text = game.platform.screen.data.transcript()
 	if not game.vm.errors.is_empty():status_key="core_error"
