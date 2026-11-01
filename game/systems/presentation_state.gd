@@ -61,6 +61,20 @@ func collect() -> Dictionary:
 	var map_image: Variant=vm.get_static("i","a","Ljavax/microedition/lcdui/Image;")
 	if map_image!=null:state.map_image=map_image.data
 	state.x=vm.get_static("i","d","B");state.y=vm.get_static("i","e","B");state.facing=vm.get_static("i","h","B")
+	var world_cells: WMObject=vm.get_static("i","s","[S")
+	state.world_id=world_cells.get_instance_id();state.world_cells=world_cells.data
+	state.world_width=int(vm.get_static("i","b","B"));state.world_height=int(vm.get_static("i","c","B"))
+	state.render_busy=graphics!=null and graphics.data.capture_depth>0
+	state.scene_groups=array("h","b","[[S")
+	state.grass_weights=array("h","a","[B")
+	state.sky_clouds=array("i","e","[B");state.sky_cloud_types=array("i","f","[B")
+	state.sky_stars=array("i","b","[B");state.sky_star_types=array("i","c","[B")
+	state.sky_star_colors=array("i","c","[I");state.sky_sun_points=array("i","a","[I");state.sky_moon_points=array("i","b","[I")
+	state.room_openings=array("i","d","[B")
+	state.corpse_present=int(vm.get_static("i","m","I"))!=-1
+	state.puzzle_stage=int(vm.get_static("i","x","B"))
+	state.in_vehicle=int(vm.get_static("i","e","Z"))!=0
+	state.moon_phase=int(vm.get_static("i","z","I"))/90
 	state.hour=vm.get_static("i","i","B");state.day=vm.get_static("i","A","I");state.stamina=vm.get_static("i","C","I")
 	var light_rows: Array=array("h","a","[[I")
 	var light_column: int=WolfLightPalette.column(int(state.hour))

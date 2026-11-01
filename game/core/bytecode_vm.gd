@@ -16,6 +16,8 @@ var errors: Array[String] = []
 var trace: Array[String] = []
 var halted: bool = false
 var max_slice: int = 45000
+# Optional presentation budget; bytecode resumes at the next instruction.
+var slice_time_usec: int=0
 var profile_enabled: bool = false
 var profile_instructions: Dictionary = {}
 var field_owner_cache: Dictionary = {}
@@ -204,9 +206,11 @@ func tick(delta_ms: int) -> void:
 		active = fiber
 		fiber.yielded = false
 		var count: int = 0
+		var deadline: int=Time.get_ticks_usec()+slice_time_usec if slice_time_usec>0 else 0
 		while not fiber.frames.is_empty() and not fiber.yielded and not halted and count < max_slice:
 			step(fiber)
 			count += 1
+			if deadline>0 and (count&127)==0 and Time.get_ticks_usec()>=deadline:break
 	for k: int in range(fibers.size()-1,-1,-1):
 		if fibers[k].frames.is_empty(): fibers.remove_at(k)
 

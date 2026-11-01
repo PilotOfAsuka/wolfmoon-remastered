@@ -1,6 +1,6 @@
 class_name WolfRemasteredWorld
 extends Control
-## Retained canvases replay the original background and the separate live effects.
+## Continuous world projection with retained original UI, effects and Classic fallback.
 var sprites: Dictionary
 var last_revision: int=-1
 var last_overlay_revision: int=-1
@@ -12,13 +12,14 @@ var base_layer: WolfSceneLayer
 var sky_layer: WolfSceneLayer
 var cloud_layer: WolfCloudLayer
 var rain_layer: WolfRainLayer
+var continuous_view: WolfWorldView
 var lighting: WolfLightPalette=WolfLightPalette.new()
 var vegetation_wind: WolfVegetationWind=WolfVegetationWind.new()
 var cloud_styles: Dictionary={}
 var overlay_layer: WolfSceneLayer
 var map_layer: WolfSceneLayer
 var logical_height: float=281.0
-const DRAW_SCHEMA: int=8
+const DRAW_SCHEMA: int=9
 var seen_schema: int=-1
 var pixel_scale: float=1.0
 var projection: Vector2=Vector2.ONE
@@ -29,6 +30,7 @@ func _ready() -> void:
  sky_layer=WolfSceneLayer.new();add_child(sky_layer)
  cloud_layer=WolfCloudLayer.new();add_child(cloud_layer)
  base_layer=WolfSceneLayer.new();add_child(base_layer)
+ continuous_view=WolfWorldView.new();add_child(continuous_view)
  rain_layer=WolfRainLayer.new();add_child(rain_layer)
  overlay_layer=WolfSceneLayer.new();add_child(overlay_layer)
  map_layer=WolfSceneLayer.new();add_child(map_layer)
@@ -45,9 +47,10 @@ func synchronize(state: Dictionary,delta: float) -> void:
  vegetation_wind.synchronize(state,pixel_scale)
  if lighting.synchronize(state,delta):
   sky_layer.queue_redraw();base_layer.queue_redraw();overlay_layer.queue_redraw();cloud_layer.queue_redraw()
+ continuous_view.synchronize(state,delta,self)
  if changed_size or last_revision!=int(state.render_revision):
   last_revision=int(state.render_revision);last_commands=state.render_commands
-  rebuild_background(state.render_commands)
+  if continuous_view.scene.identity==-1:rebuild_background(state.render_commands)
  if changed_size or last_overlay_revision!=int(state.get("overlay_revision",-1)):
   last_overlay_revision=int(state.get("overlay_revision",-1))
   overlay_layer.plan=prepare(state.get("overlay_commands",[]),true);overlay_layer.queue_redraw()
@@ -62,13 +65,15 @@ func synchronize(state: Dictionary,delta: float) -> void:
   map_layer.plan.push_front({"kind":"rect","rect":Rect2(-map_layer.position,size),"color":Color("080e12")})
   map_layer.queue_redraw();projection=world_projection;pixel_scale=world_scale;logical_height=281.0
  var show_map: bool=state.get("full_map",false)
- map_layer.visible=show_map;base_layer.visible=not show_map;overlay_layer.visible=not show_map
- sky_layer.visible=not show_map;cloud_layer.visible=not show_map
+ var continuous: bool=continuous_view.scene.identity!=-1
+ map_layer.visible=show_map;base_layer.visible=not show_map and not continuous;overlay_layer.visible=not show_map
+ sky_layer.visible=not show_map and not continuous;cloud_layer.visible=not show_map and not continuous
+ continuous_view.visible=not show_map and continuous
  cloud_layer.animating=state.get("screen","") in ["i","b"]
  state.visual_wind_gust=vegetation_wind.gust
  rain_layer.configure(state,size,pixel_scale)
  last_size=size
- render_signature="Wide Classic: %d base / %d overlay"%[base_layer.plan.size(),overlay_layer.plan.size()]
+ render_signature="World camera: %s / %d overlay"%[continuous_view.camera.position,overlay_layer.plan.size()]
 
 func rebuild_background(commands: Array) -> void:
  var prepared: Array[Dictionary]=prepare(commands,false)
@@ -181,6 +186,7 @@ func prepare(commands: Array,overlay: bool) -> Array[Dictionary]:
     continue
    "sprite":
     var id: int=int(cmd.id)
+    if overlay and continuous_view.scene.identity!=-1 and id>=407 and id<=416:continue
     if overlay and id in [216,217,218,219,220,221]:continue
     var meta: Dictionary=sprites.get(str(id),{});var texture: Texture2D=texture_for(id)
     if meta.is_empty() or texture==null:continue

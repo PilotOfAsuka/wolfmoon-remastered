@@ -10,7 +10,9 @@
 
 Для тех, кто давно искал эту игру, хочет снова в неё сыграть или открывает Wolf Moon впервые. Открывай ссылку выше и играй прямо в браузере — без установки.
 
-**Управление:** WASD / стрелки — движение и повороты · Q / E — предметы · I — инвентарь · Enter / Пробел — действие · R — спать · M — карта · J — журнал · Esc — меню · F2 — переключить оригинальный и широкий вид.
+В режиме Remastered шаги и повороты плавные, а окружение сохраняет своё положение в мире. Одно нажатие — один шаг на клетку.
+
+**Управление:** WASD / стрелки — движение и повороты · Q / E — предметы · I — инвентарь · Enter / Пробел — действие · R — спать · M — карта · J — журнал · Esc — меню · F2 — переключить Classic / Remastered.
 
 ## English
 
@@ -20,7 +22,9 @@ Remember Wolf Moon on your old Java phone? The forests, werewolves, Wendigo tote
 
 For returning fans, anyone who has been searching for this game, and those discovering Wolf Moon for the first time. Follow the link above and play right in your browser — no installation needed.
 
-**Controls:** WASD / arrows — move and turn · Q / E — items · I — inventory · Enter / Space — act · R — rest · M — map · J — journal · Esc — menu · F2 — switch between original and widescreen views.
+Remastered adds smooth steps and turns through a persistent world. One press moves one grid cell.
+
+**Controls:** WASD / arrows — move and turn · Q / E — items · I — inventory · Enter / Space — act · R — rest · M — map · J — journal · Esc — menu · F2 — switch Classic / Remastered.
 
 ---
 

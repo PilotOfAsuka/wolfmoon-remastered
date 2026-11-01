@@ -52,4 +52,5 @@ static func quad(rect: Rect2,source: Rect2,texture: Texture2D,hint: Dictionary) 
 		var pin: float=pow(height,2.2) if not hint.grass else height*height
 		colors.append(Color(float(hint.amplitude)*0.5,pin,float(hint.phase),1))
 		uvs[index].y=-tag-uvs[index].y
+		if not hint.grass:uvs[index].x+=2.0*int(hint.get("size_class",0))
 	return {"points":points,"uvs":uvs,"colors":colors,"fixed":fixed}
